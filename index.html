@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Word Birds 🐦</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <style>
+    :root {
+      --bg-deep: #0f1923;
+      --bg-card: #1a2736;
+      --bg-hover: #243447;
+      --accent: #fbbf24;
+      --accent-dim: #b8860b;
+      --green: #22c55e;
+      --green-dim: #166534;
+      --red: #ef4444;
+      --red-dim: #991b1b;
+      --blue: #3b82f6;
+      --text: #e2e8f0;
+      --text-dim: #94a3b8;
+      --text-muted: #64748b;
+      --border: #2d3f52;
+      --radius: 10px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg-deep);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    /* ── Game canvas wrapper ─────────────────────── */
+    #wrap { width: 100%; height: 100%; display: none; }
+    canvas { display: block; }
+
+    /* ── Overlay base ────────────────────────────── */
+    .overlay {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100;
+      background: var(--bg-deep);
+      transition: opacity 0.3s;
+    }
+    .overlay.hidden { display: none; }
+
+    /* ── LOGIN SCREEN ────────────────────────────── */
+    #loginScreen {
+      flex-direction: column; gap: 28px;
+    }
+    .login-box {
+      text-align: center;
+      max-width: 400px; width: 90%;
+    }
+    .login-box h1 {
+      font-size: 42px; font-weight: 800;
+      background: linear-gradient(135deg, var(--accent), #f97316);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+    .login-box .subtitle {
+      color: var(--text-dim); font-size: 15px; margin-bottom: 32px;
+    }
+    .login-box input {
+      width: 100%; padding: 14px 18px;
+      background: var(--bg-card); border: 2px solid var(--border);
+      border-radius: var(--radius); color: var(--text); font-size: 17px;
+      outline: none; transition: border-color 0.2s;
+    }
+    .login-box input:focus { border-color: var(--accent); }
+    .login-box input::placeholder { color: var(--text-muted); }
+    .btn-primary {
+      width: 100%; padding: 14px;
+      background: linear-gradient(135deg, var(--accent), #f59e0b);
+      color: #1a1a2e; font-size: 17px; font-weight: 700;
+      border: none; border-radius: var(--radius); cursor: pointer;
+      margin-top: 16px; transition: transform 0.1s, box-shadow 0.2s;
+    }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(251,191,36,0.3); }
+    .btn-primary:active { transform: scale(0.97); }
+
+    /* ── DICTIONARY SCREEN ───────────────────────── */
+    #dictScreen {
+      flex-direction: column;
+      padding: 0;
+    }
+    .dict-header {
+      width: 100%; padding: 12px 16px;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 8px;
+      flex-shrink: 0;
+    }
+    .dict-top-row {
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .dict-title {
+      font-size: 20px; font-weight: 700;
+      color: var(--accent);
+    }
+    .dict-stats {
+      font-size: 13px; color: var(--text-dim);
+    }
+    .dict-controls {
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    }
+    .dict-search {
+      flex: 1; min-width: 140px; padding: 8px 12px;
+      background: var(--bg-deep); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text); font-size: 14px;
+      outline: none;
+    }
+    .dict-search:focus { border-color: var(--accent); }
+    .btn-sm {
+      padding: 7px 14px;
+      background: var(--bg-deep); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text); font-size: 13px;
+      cursor: pointer; white-space: nowrap; transition: all 0.15s;
+    }
+    .btn-sm:hover { background: var(--bg-hover); border-color: var(--text-muted); }
+    .btn-sm.active { background: var(--accent); color: #1a1a2e; border-color: var(--accent); font-weight: 600; }
+    .btn-start {
+      padding: 8px 22px;
+      background: var(--green); color: #fff; font-weight: 700;
+      border: none; border-radius: 6px; font-size: 14px;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .btn-start:hover { background: #16a34a; }
+    .btn-start:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Letter nav ──────────────────────────────── */
+    .letter-nav {
+      display: flex; flex-wrap: wrap; gap: 2px;
+      padding: 4px 0;
+    }
+    .letter-btn {
+      width: 26px; height: 26px;
+      display: flex; align-items: center; justify-content: center;
+      background: transparent; border: none;
+      color: var(--text-muted); font-size: 12px; font-weight: 600;
+      cursor: pointer; border-radius: 4px; transition: all 0.1s;
+    }
+    .letter-btn:hover { background: var(--bg-hover); color: var(--text); }
+    .letter-btn.has-words { color: var(--text); }
+
+    /* ── Word list ───────────────────────────────── */
+    .dict-body {
+      flex: 1; overflow-y: auto; padding: 0;
+      -webkit-overflow-scrolling: touch;
+    }
+    .dict-body::-webkit-scrollbar { width: 6px; }
+    .dict-body::-webkit-scrollbar-track { background: var(--bg-deep); }
+    .dict-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .letter-group {
+      position: sticky; top: 0; z-index: 2;
+      padding: 6px 16px;
+      background: var(--bg-deep);
+      font-size: 14px; font-weight: 700;
+      color: var(--accent); border-bottom: 1px solid var(--border);
+    }
+
+    .word-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 16px;
+      border-bottom: 1px solid rgba(45,63,82,0.4);
+      cursor: pointer; transition: background 0.1s;
+    }
+    .word-row:hover { background: var(--bg-hover); }
+    .word-row.mastered-row { opacity: 0.5; }
+
+    .word-check {
+      width: 20px; height: 20px; flex-shrink: 0;
+      border: 2px solid var(--border); border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s; font-size: 12px;
+    }
+    .word-row.checked .word-check {
+      background: var(--accent); border-color: var(--accent); color: #1a1a2e;
+    }
+
+    .word-info { flex: 1; min-width: 0; }
+    .word-en {
+      font-size: 15px; font-weight: 600; color: var(--text);
+    }
+    .word-cn {
+      font-size: 13px; color: var(--text-dim);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .word-status {
+      flex-shrink: 0; font-size: 11px; padding: 2px 8px;
+      border-radius: 10px; font-weight: 600;
+    }
+    .status-mastered { background: var(--green-dim); color: var(--green); }
+    .status-wrong { background: var(--red-dim); color: #fca5a5; }
+    .status-new { background: transparent; color: var(--text-muted); }
+
+    /* ── Mastered section divider ─────────────────── */
+    .mastered-divider {
+      padding: 10px 16px;
+      background: var(--bg-card);
+      border-top: 2px solid var(--green-dim);
+      border-bottom: 1px solid var(--border);
+      font-size: 13px; color: var(--green);
+      font-weight: 600;
+      position: sticky; top: 0; z-index: 2;
+    }
+
+    /* ── RESULTS OVERLAY ─────────────────────────── */
+    #resultsScreen {
+      flex-direction: column; gap: 20px;
+      padding: 24px;
+    }
+    .results-box {
+      max-width: 500px; width: 100%;
+      background: var(--bg-card);
+      border-radius: 14px; padding: 28px;
+      border: 1px solid var(--border);
+    }
+    .results-box h2 {
+      font-size: 26px; font-weight: 800;
+      color: var(--accent); text-align: center;
+      margin-bottom: 20px;
+    }
+    .results-summary {
+      display: flex; justify-content: space-around;
+      margin-bottom: 20px;
+    }
+    .results-stat {
+      text-align: center;
+    }
+    .results-stat .num {
+      font-size: 32px; font-weight: 800;
+    }
+    .results-stat .label {
+      font-size: 12px; color: var(--text-dim);
+    }
+    .num-green { color: var(--green); }
+    .num-red { color: var(--red); }
+    .num-blue { color: var(--blue); }
+
+    .results-section {
+      margin-top: 16px;
+    }
+    .results-section h3 {
+      font-size: 14px; font-weight: 700;
+      margin-bottom: 8px; padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+    .results-word-list {
+      max-height: 150px; overflow-y: auto;
+      display: flex; flex-wrap: wrap; gap: 6px;
+    }
+    .results-word-tag {
+      padding: 4px 10px; border-radius: 6px;
+      font-size: 13px; font-weight: 500;
+    }
+    .tag-correct { background: var(--green-dim); color: var(--green); }
+    .tag-wrong { background: var(--red-dim); color: #fca5a5; }
+
+    .results-btns {
+      display: flex; gap: 10px; margin-top: 24px;
+    }
+    .results-btns button {
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ═══ LOGIN SCREEN ═══ -->
+  <div id="loginScreen" class="overlay">
+    <div class="login-box">
+      <h1>🐦 Word Birds</h1>
+      <p class="subtitle">IELTS 词汇射击游戏 · 智能记忆</p>
+      <input type="text" id="usernameInput" placeholder="输入你的用户名..." autocomplete="off" maxlength="20">
+      <button class="btn-primary" id="loginBtn">开始学习</button>
+      <p style="color:var(--text-muted);font-size:12px;margin-top:14px;">
+        每个用户名拥有独立的学习记录
+      </p>
+    </div>
+  </div>
+
+  <!-- ═══ DICTIONARY SCREEN ═══ -->
+  <div id="dictScreen" class="overlay hidden">
+    <div class="dict-header">
+      <div class="dict-top-row">
+        <span class="dict-title">📖 词典</span>
+        <span class="dict-stats" id="dictStats">已选 0 词</span>
+      </div>
+      <div class="dict-controls">
+        <input type="text" class="dict-search" id="dictSearch" placeholder="搜索单词...">
+        <button class="btn-sm" id="filterAll">全部</button>
+        <button class="btn-sm" id="filterChecked">已选</button>
+        <button class="btn-sm" id="filterWrong">需复习</button>
+        <button class="btn-sm" id="filterMastered">已掌握</button>
+        <button class="btn-sm" id="selectAllVisible">全选当页</button>
+        <button class="btn-sm" id="deselectAll">清空选择</button>
+        <button class="btn-start" id="startGameBtn" disabled>开始游戏</button>
+        <button class="btn-sm" id="logoutBtn" style="color:#fca5a5;">退出</button>
+      </div>
+      <div class="letter-nav" id="letterNav"></div>
+    </div>
+    <div class="dict-body" id="dictBody"></div>
+  </div>
+
+  <!-- ═══ RESULTS SCREEN ═══ -->
+  <div id="resultsScreen" class="overlay hidden">
+    <div class="results-box">
+      <h2>📊 学习报告</h2>
+      <div class="results-summary">
+        <div class="results-stat">
+          <div class="num num-blue" id="rTotal">0</div>
+          <div class="label">总题数</div>
+        </div>
+        <div class="results-stat">
+          <div class="num num-green" id="rCorrect">0</div>
+          <div class="label">一次答对</div>
+        </div>
+        <div class="results-stat">
+          <div class="num num-red" id="rWrong">0</div>
+          <div class="label">答错</div>
+        </div>
+      </div>
+      <div class="results-section" id="rCorrectSection">
+        <h3 style="color:var(--green);">✅ 一次答对</h3>
+        <div class="results-word-list" id="rCorrectList"></div>
+      </div>
+      <div class="results-section" id="rWrongSection">
+        <h3 style="color:var(--red);">❌ 答错的词（下次继续练习）</h3>
+        <div class="results-word-list" id="rWrongList"></div>
+      </div>
+      <div class="results-btns">
+        <button class="btn-sm" id="rBackDict">返回词典</button>
+        <button class="btn-start" id="rPlayAgain">再玩一轮</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ GAME CANVAS ═══ -->
+  <div id="wrap"></div>
+
+  <script src="phaser.min.js"></script>
+  <script src="words.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>
