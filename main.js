@@ -89,9 +89,14 @@ const UserManager = {
 //  DICTIONARY UI
 // ══════════════════════════════════════════════════════════
 const DictUI = {
-  filter: "all",       // "all" | "checked" | "wrong" | "mastered"
+  filter: "all",
   searchTerm: "",
-  renderedWords: [],
+  renderedWords: [],    // flat list after filtering
+  flatItems: [],        // [{type:'letter'|'divider'|'word', ...}]
+  ROW_H: 58,            // word row height in px
+  HDR_H: 34,            // letter-group / divider height
+  OVERSCAN: 8,          // extra rows above/below viewport
+  _scrollRAF: null,
 
   init() {
     this.els = {
@@ -108,18 +113,22 @@ const DictUI = {
       deselectAllBtn:  document.getElementById("deselectAll"),
     };
 
-    // Search
+    // Create virtual scroll containers once
+    this.els.body.innerHTML = `<div id="vsTotal" style="position:relative;width:100%;overflow:hidden;"></div>`;
+    this.vsTotal   = document.getElementById("vsTotal");
+
+    // Search with debounce
+    let searchTimer = null;
     this.els.search.addEventListener("input", () => {
-      this.searchTerm = this.els.search.value.trim().toLowerCase();
-      this.render();
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        this.searchTerm = this.els.search.value.trim().toLowerCase();
+        this.rebuild();
+      }, 150);
     });
 
     // Filters
-    const setFilter = (f) => {
-      this.filter = f;
-      this.updateFilterBtns();
-      this.render();
-    };
+    const setFilter = (f) => { this.filter = f; this.updateFilterBtns(); this.rebuild(); };
     this.els.filterAll.addEventListener("click",     () => setFilter("all"));
     this.els.filterChecked.addEventListener("click",  () => setFilter("checked"));
     this.els.filterWrong.addEventListener("click",    () => setFilter("wrong"));
@@ -127,16 +136,37 @@ const DictUI = {
 
     // Select all visible
     this.els.selectAllBtn.addEventListener("click", () => {
-      const words = this.renderedWords.filter(w => !w._isMastered).map(w => w.word);
+      const words = this.renderedWords.filter(w => !w._mastered).map(w => w.word);
       UserManager.batchSetSelected(words, true);
-      this.render();
+      this.rebuild();
     });
 
     // Deselect all
     this.els.deselectAllBtn.addEventListener("click", () => {
-      const allWords = ALL_WORDS.map(w => w.word);
-      UserManager.batchSetSelected(allWords, false);
-      this.render();
+      UserManager.batchSetSelected(ALL_WORDS.map(w => w.word), false);
+      this.rebuild();
+    });
+
+    // Scroll → paint visible rows (throttled via rAF)
+    this.els.body.addEventListener("scroll", () => {
+      if (this._scrollRAF) return;
+      this._scrollRAF = requestAnimationFrame(() => { this._scrollRAF = null; this.paint(); });
+    }, { passive: true });
+
+    // Click delegation
+    this.els.body.addEventListener("click", (e) => {
+      const row = e.target.closest(".word-row");
+      if (!row) return;
+      const word = row.dataset.word;
+      if (!word) return;
+      const d = UserManager.getWordData(word);
+      UserManager.setWordSelected(word, !d.selected);
+      // Micro-update: toggle just this row visually + refresh stats
+      const item = this.flatItems.find(it => it.type === "word" && it.w.word === word);
+      if (item) item.w._selected = !d.selected;
+      row.classList.toggle("checked", !d.selected);
+      row.querySelector(".word-check").textContent = !d.selected ? "✓" : "";
+      this.updateStats();
     });
 
     this.buildLetterNav();
@@ -144,12 +174,10 @@ const DictUI = {
   },
 
   updateFilterBtns() {
-    [this.els.filterAll, this.els.filterChecked, this.els.filterWrong, this.els.filterMastered].forEach(b => b.classList.remove("active"));
-    ({
-      all:      this.els.filterAll,
-      checked:  this.els.filterChecked,
-      wrong:    this.els.filterWrong,
-      mastered: this.els.filterMastered,
+    [this.els.filterAll, this.els.filterChecked, this.els.filterWrong, this.els.filterMastered]
+      .forEach(b => b.classList.remove("active"));
+    ({ all: this.els.filterAll, checked: this.els.filterChecked,
+       wrong: this.els.filterWrong, mastered: this.els.filterMastered
     })[this.filter]?.classList.add("active");
   },
 
@@ -161,124 +189,143 @@ const DictUI = {
       const btn = document.createElement("button");
       btn.className = "letter-btn" + (letters.has(letter) ? " has-words" : "");
       btn.textContent = letter;
-      btn.addEventListener("click", () => {
-        const target = document.getElementById("letter-" + letter);
-        if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
+      btn.addEventListener("click", () => this.scrollToLetter(letter));
       this.els.letterNav.appendChild(btn);
     }
+  },
+
+  scrollToLetter(letter) {
+    const idx = this.flatItems.findIndex(it =>
+      it.type === "letter" && it.letter === letter);
+    if (idx < 0) return;
+    // Calculate pixel offset
+    let px = 0;
+    for (let i = 0; i < idx; i++) px += this.flatItems[i].type === "word" ? this.ROW_H : this.HDR_H;
+    this.els.body.scrollTop = px;
   },
 
   getFilteredWords() {
     const userData = UserManager.getAllWordData();
     let words = ALL_WORDS.map(w => {
       const d = userData[w.word] || {};
-      return {
-        ...w,
-        _selected: !!d.selected,
-        _mastered: !!d.mastered,
-        _mistakes: d.mistakes || 0,
-        _correctFirst: d.correctFirst || 0,
-      };
+      return { ...w, _selected: !!d.selected, _mastered: !!d.mastered,
+               _mistakes: d.mistakes || 0, _correctFirst: d.correctFirst || 0 };
     });
-
-    // Apply search
     if (this.searchTerm) {
       words = words.filter(w =>
         w.word.toLowerCase().includes(this.searchTerm) ||
-        w.meaning.includes(this.searchTerm)
-      );
+        w.meaning.includes(this.searchTerm));
     }
-
-    // Apply filter
     if (this.filter === "checked")  words = words.filter(w => w._selected);
     if (this.filter === "wrong")    words = words.filter(w => w._mistakes > 0 && !w._mastered);
     if (this.filter === "mastered") words = words.filter(w => w._mastered);
-
-    // Sort: non-mastered first (alphabetical), then mastered at bottom (alphabetical)
-    const active   = words.filter(w => !w._mastered);
-    const mastered = words.filter(w => w._mastered);
-
-    return { active, mastered };
+    return { active: words.filter(w => !w._mastered), mastered: words.filter(w => w._mastered) };
   },
 
-  render() {
+  // Build flat item list + compute total height
+  rebuild() {
     const { active, mastered } = this.getFilteredWords();
     this.renderedWords = [...active, ...mastered];
+    this.flatItems = [];
 
-    // Update stats
-    const selectedCount = ALL_WORDS.filter(w => {
-      const d = UserManager.getWordData(w.word);
-      return d.selected;
-    }).length;
-    const masteredCount = ALL_WORDS.filter(w => UserManager.getWordData(w.word).mastered).length;
-    this.els.stats.textContent = `已选 ${selectedCount} 词 · 已掌握 ${masteredCount} 词 · 共 ${ALL_WORDS.length} 词`;
-    this.els.startBtn.disabled = selectedCount < 3;
-
-    // Build HTML
-    const html = [];
-    let currentLetter = "";
-
-    // Active words
+    let curLetter = "";
     active.forEach(w => {
-      const firstLetter = w.word[0].toUpperCase();
-      if (firstLetter !== currentLetter) {
-        currentLetter = firstLetter;
-        html.push(`<div class="letter-group" id="letter-${firstLetter}">${firstLetter}</div>`);
-      }
-      html.push(this.wordRowHTML(w));
+      const fl = w.word[0].toUpperCase();
+      if (fl !== curLetter) { curLetter = fl; this.flatItems.push({ type: "letter", letter: fl }); }
+      this.flatItems.push({ type: "word", w, mastered: false });
     });
-
-    // Mastered section
     if (mastered.length > 0) {
-      html.push(`<div class="mastered-divider">✅ 已掌握 (${mastered.length} 词) — 一次答对后移至此处</div>`);
-      currentLetter = "";
+      this.flatItems.push({ type: "divider", count: mastered.length });
+      curLetter = "";
       mastered.forEach(w => {
-        const firstLetter = w.word[0].toUpperCase();
-        if (firstLetter !== currentLetter) {
-          currentLetter = firstLetter;
-          html.push(`<div class="letter-group" id="letter-m-${firstLetter}">${firstLetter}</div>`);
-        }
-        html.push(this.wordRowHTML(w, true));
+        const fl = w.word[0].toUpperCase();
+        if (fl !== curLetter) { curLetter = fl; this.flatItems.push({ type: "letter", letter: "m-" + fl, display: fl }); }
+        this.flatItems.push({ type: "word", w, mastered: true });
       });
     }
 
-    if (html.length === 0) {
-      html.push(`<div style="text-align:center;padding:60px 20px;color:var(--text-muted);">没有找到词语</div>`);
-    }
+    // Compute total height
+    let totalH = 0;
+    this.flatItems.forEach(it => { totalH += it.type === "word" ? this.ROW_H : this.HDR_H; });
+    this.vsTotal.style.height = totalH + "px";
 
-    this.els.body.innerHTML = html.join("");
-
-    // Bind click events using delegation
-    this.els.body.onclick = (e) => {
-      const row = e.target.closest(".word-row");
-      if (!row) return;
-      const word = row.dataset.word;
-      if (!word) return;
-      const d = UserManager.getWordData(word);
-      UserManager.setWordSelected(word, !d.selected);
-      this.render();
-    };
+    this.updateStats();
+    this.els.body.scrollTop = 0;
+    this.paint();
   },
 
-  wordRowHTML(w, isMastered = false) {
+  updateStats() {
+    const userData = UserManager.getAllWordData();
+    let selectedCount = 0, masteredCount = 0;
+    ALL_WORDS.forEach(w => {
+      const d = userData[w.word];
+      if (d?.selected) selectedCount++;
+      if (d?.mastered) masteredCount++;
+    });
+    this.els.stats.textContent = `已选 ${selectedCount} 词 · 已掌握 ${masteredCount} 词 · 共 ${ALL_WORDS.length} 词`;
+    this.els.startBtn.disabled = selectedCount < 3;
+  },
+
+  // Paint only visible rows
+  paint() {
+    const scrollTop  = this.els.body.scrollTop;
+    const viewH      = this.els.body.clientHeight;
+    const items      = this.flatItems;
+    const ROW_H      = this.ROW_H;
+    const HDR_H      = this.HDR_H;
+    const OVERSCAN   = this.OVERSCAN;
+
+    // Find visible range
+    let y = 0, startIdx = -1, endIdx = items.length;
+    for (let i = 0; i < items.length; i++) {
+      const h = items[i].type === "word" ? ROW_H : HDR_H;
+      if (startIdx < 0 && y + h > scrollTop - OVERSCAN * ROW_H) startIdx = i;
+      if (y > scrollTop + viewH + OVERSCAN * ROW_H) { endIdx = i; break; }
+      y += h;
+    }
+    if (startIdx < 0) startIdx = 0;
+
+    // Compute top offset for startIdx
+    let topOffset = 0;
+    for (let i = 0; i < startIdx; i++) topOffset += items[i].type === "word" ? ROW_H : HDR_H;
+
+    // Build only visible HTML
+    const parts = [];
+    for (let i = startIdx; i < endIdx; i++) {
+      const it = items[i];
+      if (it.type === "letter") {
+        parts.push(`<div class="letter-group" style="height:${HDR_H}px;line-height:${HDR_H}px;">${it.display || it.letter}</div>`);
+      } else if (it.type === "divider") {
+        parts.push(`<div class="mastered-divider" style="height:${HDR_H}px;line-height:${HDR_H}px;">✅ 已掌握 (${it.count} 词)</div>`);
+      } else {
+        parts.push(this.wordRowHTML(it.w, it.mastered));
+      }
+    }
+
+    if (items.length === 0) {
+      this.vsTotal.innerHTML = `<div style="text-align:center;padding:60px 20px;color:var(--text-muted);">没有找到词语</div>`;
+      return;
+    }
+
+    this.vsTotal.innerHTML =
+      `<div style="height:${topOffset}px;"></div>` +
+      parts.join("") +
+      `<div style="height:0px;"></div>`;
+  },
+
+  wordRowHTML(w, isMastered) {
     const checkedClass = w._selected ? " checked" : "";
     const masteredClass = isMastered ? " mastered-row" : "";
     let statusHTML = "";
-    if (w._mastered) {
-      statusHTML = `<span class="word-status status-mastered">已掌握</span>`;
-    } else if (w._mistakes > 0) {
-      statusHTML = `<span class="word-status status-wrong">错${w._mistakes}次</span>`;
-    }
-    return `<div class="word-row${checkedClass}${masteredClass}" data-word="${w.word}">
+    if (w._mastered) statusHTML = `<span class="word-status status-mastered">已掌握</span>`;
+    else if (w._mistakes > 0) statusHTML = `<span class="word-status status-wrong">错${w._mistakes}次</span>`;
+    return `<div class="word-row${checkedClass}${masteredClass}" data-word="${w.word}" style="height:${this.ROW_H}px;">
       <div class="word-check">${w._selected ? "✓" : ""}</div>
-      <div class="word-info">
-        <div class="word-en">${w.word}</div>
-        <div class="word-cn">${w.meaning}</div>
-      </div>
-      ${statusHTML}
-    </div>`;
-  }
+      <div class="word-info"><div class="word-en">${w.word}</div><div class="word-cn">${w.meaning}</div></div>
+      ${statusHTML}</div>`;
+  },
+
+  render() { this.rebuild(); }
 };
 
 

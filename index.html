@@ -156,8 +156,7 @@
     .dict-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
     .letter-group {
-      position: sticky; top: 0; z-index: 2;
-      padding: 6px 16px;
+      padding: 0 16px; height: 34px; line-height: 34px;
       background: var(--bg-deep);
       font-size: 14px; font-weight: 700;
       color: var(--accent); border-bottom: 1px solid var(--border);
@@ -165,7 +164,7 @@
 
     .word-row {
       display: flex; align-items: center; gap: 10px;
-      padding: 10px 16px;
+      padding: 0 16px; height: 58px;
       border-bottom: 1px solid rgba(45,63,82,0.4);
       cursor: pointer; transition: background 0.1s;
     }
@@ -201,13 +200,12 @@
 
     /* ── Mastered section divider ─────────────────── */
     .mastered-divider {
-      padding: 10px 16px;
+      padding: 0 16px; height: 34px; line-height: 34px;
       background: var(--bg-card);
       border-top: 2px solid var(--green-dim);
       border-bottom: 1px solid var(--border);
       font-size: 13px; color: var(--green);
       font-weight: 600;
-      position: sticky; top: 0; z-index: 2;
     }
 
     /* ── RESULTS OVERLAY ─────────────────────────── */
