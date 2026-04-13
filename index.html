@@ -49,21 +49,54 @@
 
     /* ── LOGIN SCREEN ────────────────────────────── */
     #loginScreen {
-      flex-direction: column; gap: 28px;
+      flex-direction: column; gap: 20px;
     }
     .login-box {
       text-align: center;
-      max-width: 400px; width: 90%;
+      max-width: 420px; width: 90%;
+    }
+    .login-birds {
+      font-size: 48px; margin-bottom: 4px;
+      animation: birdBounce 2s ease-in-out infinite;
+    }
+    @keyframes birdBounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
     }
     .login-box h1 {
-      font-size: 42px; font-weight: 800;
-      background: linear-gradient(135deg, var(--accent), #f97316);
+      font-size: 46px; font-weight: 900;
+      background: linear-gradient(135deg, var(--accent), #f97316, #ef4444);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
+      letter-spacing: -1px;
     }
     .login-box .subtitle {
-      color: var(--text-dim); font-size: 15px; margin-bottom: 32px;
+      color: var(--text-dim); font-size: 14px; margin-bottom: 6px;
     }
+    .login-box .subtitle-ebbinghaus {
+      color: var(--text-muted); font-size: 12px; margin-bottom: 22px;
+      line-height: 1.5;
+    }
+    .login-features {
+      display: flex; gap: 10px; justify-content: center;
+      margin-bottom: 26px; flex-wrap: wrap;
+    }
+    .login-feature {
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 14px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 13px; color: var(--text);
+      transition: all 0.2s;
+    }
+    .login-feature:hover {
+      border-color: var(--accent);
+      background: var(--bg-hover);
+      transform: translateY(-2px);
+    }
+    .login-feature .feat-icon { font-size: 16px; }
+    .login-feature .feat-text { font-weight: 500; }
     .login-box input {
       width: 100%; padding: 14px 18px;
       background: var(--bg-card); border: 2px solid var(--border);
@@ -81,6 +114,10 @@
     }
     .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(251,191,36,0.3); }
     .btn-primary:active { transform: scale(0.97); }
+    .login-footer {
+      color: var(--text-muted); font-size: 12px; margin-top: 16px;
+      line-height: 1.6;
+    }
 
     /* ── DICTIONARY SCREEN ───────────────────────── */
     #dictScreen {
@@ -131,6 +168,91 @@
     .btn-start:hover { background: #16a34a; }
     .btn-start:disabled { opacity: 0.4; cursor: not-allowed; }
 
+    /* ── Random pick group ───────────────────────── */
+    .random-pick-group {
+      display: flex; gap: 4px; align-items: center;
+    }
+    .random-input {
+      width: 62px; padding: 7px 6px; text-align: center;
+      background: var(--bg-deep); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text); font-size: 14px;
+      outline: none; -moz-appearance: textfield;
+    }
+    .random-input::-webkit-inner-spin-button,
+    .random-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .random-input:focus { border-color: var(--accent); }
+    .btn-random {
+      padding: 7px 14px;
+      background: linear-gradient(135deg, #7c3aed, #6d28d9);
+      border: none; border-radius: 6px;
+      color: #fff; font-size: 13px; font-weight: 600;
+      cursor: pointer; white-space: nowrap; transition: all 0.15s;
+    }
+    .btn-random:hover { background: linear-gradient(135deg, #8b5cf6, #7c3aed); box-shadow: 0 2px 12px rgba(124,58,237,0.3); }
+
+    /* ── Review banner ───────────────────────────── */
+    .review-banner {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px;
+      background: linear-gradient(135deg, #1e3a5f, #1a2736);
+      border-bottom: 2px solid var(--accent);
+      flex-shrink: 0;
+    }
+    .review-banner-left {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 14px; color: var(--accent);
+    }
+    .review-banner-icon { font-size: 20px; }
+    .btn-review-start {
+      padding: 7px 18px;
+      background: linear-gradient(135deg, var(--accent), #f59e0b);
+      color: #1a1a2e; font-size: 13px; font-weight: 700;
+      border: none; border-radius: 6px;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .btn-review-start:hover { box-shadow: 0 2px 12px rgba(251,191,36,0.3); }
+    .btn-review-start:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Level indicators in word rows ────────────── */
+    .word-meta {
+      flex-shrink: 0; display: flex; flex-direction: column;
+      align-items: flex-end; gap: 2px; min-width: 70px;
+    }
+    .word-level {
+      font-size: 12px; font-weight: 700;
+    }
+    .word-review-time {
+      font-size: 11px; color: var(--text-muted);
+    }
+    .level-bar {
+      width: 100%; height: 3px; margin-top: 3px;
+      background: var(--border); border-radius: 2px;
+      overflow: hidden;
+    }
+    .level-bar-fill {
+      height: 100%; border-radius: 2px;
+      transition: width 0.3s;
+    }
+
+    /* Due word highlight */
+    .word-row.due-row {
+      border-left: 3px solid var(--accent);
+      background: rgba(251,191,36,0.05);
+    }
+    .word-row.due-row .word-review-time {
+      color: var(--accent); font-weight: 600;
+    }
+
+    /* ── Results: level & review time ─────────────── */
+    .results-level {
+      font-size: 12px; font-weight: 700;
+      white-space: nowrap;
+    }
+    .results-next-review {
+      font-size: 11px; color: var(--text-muted);
+      white-space: nowrap; margin-left: auto;
+    }
+
     /* ── Letter nav ──────────────────────────────── */
     .letter-nav {
       display: flex; flex-wrap: wrap; gap: 2px;
@@ -164,7 +286,7 @@
 
     .word-row {
       display: flex; align-items: center; gap: 10px;
-      padding: 0 16px; height: 58px;
+      padding: 0 16px; min-height: 68px;
       border-bottom: 1px solid rgba(45,63,82,0.4);
       cursor: pointer; transition: background 0.1s;
     }
@@ -215,6 +337,7 @@
     }
     .results-box {
       max-width: 500px; width: 100%;
+      max-height: 90vh; overflow-y: auto;
       background: var(--bg-card);
       border-radius: 14px; padding: 28px;
       border: 1px solid var(--border);
@@ -250,7 +373,7 @@
       border-bottom: 1px solid var(--border);
     }
     .results-word-list {
-      max-height: 150px; overflow-y: auto;
+      max-height: 200px; overflow-y: auto;
       display: flex; flex-wrap: wrap; gap: 6px;
     }
     .results-word-tag {
@@ -266,6 +389,34 @@
     .results-btns button {
       flex: 1;
     }
+
+    .results-summary-text {
+      text-align: center; font-size: 15px; color: var(--accent);
+      margin-bottom: 16px; font-weight: 600;
+    }
+
+    .results-word-list-detail {
+      flex-direction: column;
+    }
+    .results-word-detail {
+      display: flex; align-items: center; gap: 8px;
+      padding: 4px 0;
+    }
+    .wrong-detail {
+      font-size: 12px; color: var(--text-muted);
+    }
+    .learned-item {
+      border-bottom: 1px solid rgba(45,63,82,0.3);
+      padding: 6px 0;
+    }
+    .learned-word {
+      font-size: 14px; font-weight: 600; color: var(--text);
+      min-width: 100px;
+    }
+    .learned-meaning {
+      font-size: 13px; color: var(--text-dim);
+      flex: 1;
+    }
   </style>
 </head>
 <body>
@@ -273,12 +424,31 @@
   <!-- ═══ LOGIN SCREEN ═══ -->
   <div id="loginScreen" class="overlay">
     <div class="login-box">
-      <h1>🐦 Word Birds</h1>
-      <p class="subtitle">IELTS 词汇射击游戏 · 智能记忆</p>
-      <input type="text" id="usernameInput" placeholder="输入你的用户名..." autocomplete="off" maxlength="20">
-      <button class="btn-primary" id="loginBtn">开始学习</button>
-      <p style="color:var(--text-muted);font-size:12px;margin-top:14px;">
-        每个用户名拥有独立的学习记录
+      <div class="login-birds">🐦 🐤 🐥</div>
+      <h1>Word Birds</h1>
+      <p class="subtitle">用小鸟砸猪的方式背单词，谁说学习不能好玩？</p>
+      <p class="subtitle-ebbinghaus">基于艾宾浩斯遗忘曲线 · 科学安排每一次复习</p>
+
+      <div class="login-features">
+        <div class="login-feature">
+          <span class="feat-icon">🧠</span>
+          <span class="feat-text">科学间隔复习</span>
+        </div>
+        <div class="login-feature">
+          <span class="feat-icon">🔊</span>
+          <span class="feat-text">英美双语发音</span>
+        </div>
+        <div class="login-feature">
+          <span class="feat-icon">🎯</span>
+          <span class="feat-text">自适应记忆追踪</span>
+        </div>
+      </div>
+
+      <input type="text" id="usernameInput" placeholder="给自己取个名字吧 ✏️" autocomplete="off" maxlength="20">
+      <button class="btn-primary" id="loginBtn">🚀 开始学习</button>
+      <p class="login-footer">
+        系统将为你建立独立的记忆档案<br>
+        答对升级 · 答错重来 · 到期提醒复习
       </p>
     </div>
   </div>
@@ -296,12 +466,24 @@
         <button class="btn-sm" id="filterChecked">已选</button>
         <button class="btn-sm" id="filterWrong">需复习</button>
         <button class="btn-sm" id="filterMastered">已掌握</button>
+        <button class="btn-sm" id="filterReview">待复习</button>
         <button class="btn-sm" id="selectAllVisible">全选当页</button>
         <button class="btn-sm" id="deselectAll">清空选择</button>
+        <span class="random-pick-group">
+          <input type="number" id="randomCount" class="random-input" min="3" max="999" value="20" placeholder="数量">
+          <button class="btn-random" id="randomPickBtn">🎲 随机选词</button>
+        </span>
         <button class="btn-start" id="startGameBtn" disabled>开始游戏</button>
         <button class="btn-sm" id="logoutBtn" style="color:#fca5a5;">退出</button>
       </div>
       <div class="letter-nav" id="letterNav"></div>
+    </div>
+    <div class="review-banner" id="reviewBanner" style="display:none;">
+      <div class="review-banner-left">
+        <span class="review-banner-icon">📅</span>
+        <span>今日待复习: <strong id="reviewBannerCount">0</strong> 词</span>
+      </div>
+      <button class="btn-review-start" id="reviewStartBtn">一键复习</button>
     </div>
     <div class="dict-body" id="dictBody"></div>
   </div>
@@ -310,10 +492,11 @@
   <div id="resultsScreen" class="overlay hidden">
     <div class="results-box">
       <h2>📊 学习报告</h2>
+      <p class="results-summary-text" id="rSummaryText">本轮学习了 0 个词</p>
       <div class="results-summary">
         <div class="results-stat">
           <div class="num num-blue" id="rTotal">0</div>
-          <div class="label">总题数</div>
+          <div class="label">总词数</div>
         </div>
         <div class="results-stat">
           <div class="num num-green" id="rCorrect">0</div>
@@ -321,7 +504,7 @@
         </div>
         <div class="results-stat">
           <div class="num num-red" id="rWrong">0</div>
-          <div class="label">答错</div>
+          <div class="label">答错过</div>
         </div>
       </div>
       <div class="results-section" id="rCorrectSection">
@@ -329,8 +512,12 @@
         <div class="results-word-list" id="rCorrectList"></div>
       </div>
       <div class="results-section" id="rWrongSection">
-        <h3 style="color:var(--red);">❌ 答错的词（下次继续练习）</h3>
-        <div class="results-word-list" id="rWrongList"></div>
+        <h3 style="color:var(--red);">❌ 答错的词（详情）</h3>
+        <div class="results-word-list results-word-list-detail" id="rWrongList"></div>
+      </div>
+      <div class="results-section">
+        <h3 style="color:var(--blue);">📖 本次学习的所有词</h3>
+        <div class="results-word-list results-word-list-detail" id="rLearnedList"></div>
       </div>
       <div class="results-btns">
         <button class="btn-sm" id="rBackDict">返回词典</button>

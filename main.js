@@ -9,8 +9,47 @@ if (!ALL_WORDS || ALL_WORDS.length < 10) {
 }
 
 // ══════════════════════════════════════════════════════════
-//  USER MANAGER — localStorage per-user persistence
+//  EBBINGHAUS REVIEW INTERVALS (milliseconds)
 // ══════════════════════════════════════════════════════════
+const REVIEW_INTERVALS = [
+  5  * 60 * 1000,        // Lv0→1:  5 min
+  30 * 60 * 1000,        // Lv1→2:  30 min
+  12 * 60 * 60 * 1000,   // Lv2→3:  12 hours
+  24 * 60 * 60 * 1000,   // Lv3→4:  1 day
+  3  * 24 * 60 * 60 * 1000, // Lv4→5:  3 days
+  7  * 24 * 60 * 60 * 1000, // Lv5→perm: 7 days
+];
+const MAX_LEVEL = 5;
+
+function formatNextReview(nextReview) {
+  if (!nextReview) return "";
+  const now = Date.now();
+  const diff = nextReview - now;
+  if (diff <= 0) return "🔔 现在复习";
+  if (diff < 60000) return `${Math.ceil(diff/1000)}秒后`;
+  if (diff < 3600000) return `${Math.ceil(diff/60000)}分钟后`;
+  if (diff < 86400000) return `${(diff/3600000).toFixed(1)}小时后`;
+  return `${(diff/86400000).toFixed(1)}天后`;
+}
+
+function levelLabel(lv) {
+  const labels = ["🌱新","📗Lv1","📘Lv2","📙Lv3","📕Lv4","⭐Lv5","👑永久"];
+  return labels[Math.min(lv, 6)] || "🌱新";
+}
+
+function levelColor(lv) {
+  const colors = ["#94a3b8","#22c55e","#3b82f6","#f59e0b","#ef4444","#a855f7","#fbbf24"];
+  return colors[Math.min(lv, 6)] || "#94a3b8";
+}
+
+
+// ══════════════════════════════════════════════════════════
+//  USER MANAGER — localStorage per-user persistence
+//  with Ebbinghaus spaced repetition
+// ══════════════════════════════════════════════════════════
+const DEFAULT_WORD = { selected:false, correctFirst:0, mistakes:0, mastered:false,
+                       level:0, lastReview:null, nextReview:null };
+
 const UserManager = {
   currentUser: null,
 
@@ -20,10 +59,12 @@ const UserManager = {
     this.currentUser = username.trim().toLowerCase();
     if (!localStorage.getItem(this._key())) {
       localStorage.setItem(this._key(), JSON.stringify({
-        wordData: {},     // { word: { selected, correctFirst, mistakes, mastered } }
+        wordData: {},
         created: Date.now()
       }));
     }
+    // Run decay check on login
+    this.decayOverdue();
   },
 
   logout() { this.currentUser = null; },
@@ -37,14 +78,30 @@ const UserManager = {
     try { localStorage.setItem(this._key(), JSON.stringify(data)); } catch(e) {}
   },
 
+  _ensure(data, word) {
+    if (!data.wordData[word]) data.wordData[word] = { ...DEFAULT_WORD };
+    // migrate old data missing new fields
+    const d = data.wordData[word];
+    if (d.level === undefined) d.level = d.mastered ? 5 : 0;
+    if (d.lastReview === undefined) d.lastReview = null;
+    if (d.nextReview === undefined) d.nextReview = null;
+    return d;
+  },
+
   getWordData(word) {
-    const d = this.load().wordData[word];
-    return d || { selected: false, correctFirst: 0, mistakes: 0, mastered: false };
+    const data = this.load();
+    const d = data.wordData[word];
+    if (!d) return { ...DEFAULT_WORD };
+    // migrate
+    if (d.level === undefined) d.level = d.mastered ? 5 : 0;
+    if (d.lastReview === undefined) d.lastReview = null;
+    if (d.nextReview === undefined) d.nextReview = null;
+    return d;
   },
 
   setWordSelected(word, selected) {
     const data = this.load();
-    if (!data.wordData[word]) data.wordData[word] = { selected: false, correctFirst: 0, mistakes: 0, mastered: false };
+    this._ensure(data, word);
     data.wordData[word].selected = selected;
     this.save(data);
   },
@@ -52,7 +109,7 @@ const UserManager = {
   batchSetSelected(words, selected) {
     const data = this.load();
     words.forEach(w => {
-      if (!data.wordData[w]) data.wordData[w] = { selected: false, correctFirst: 0, mistakes: 0, mastered: false };
+      this._ensure(data, w);
       data.wordData[w].selected = selected;
     });
     this.save(data);
@@ -60,20 +117,77 @@ const UserManager = {
 
   recordCorrectFirst(word) {
     const data = this.load();
-    if (!data.wordData[word]) data.wordData[word] = { selected: false, correctFirst: 0, mistakes: 0, mastered: false };
-    data.wordData[word].correctFirst++;
-    // mastered = answered correctly first-try at least once
-    data.wordData[word].mastered = true;
+    const d = this._ensure(data, word);
+    d.correctFirst++;
+    d.lastReview = Date.now();
+
+    // Level up
+    if (d.level <= MAX_LEVEL) {
+      d.level++;
+      if (d.level > MAX_LEVEL) {
+        // Permanent mastery
+        d.mastered = true;
+        d.nextReview = null;
+      } else {
+        d.nextReview = Date.now() + REVIEW_INTERVALS[d.level - 1];
+        d.mastered = false;
+      }
+    }
     this.save(data);
   },
 
   recordMistake(word) {
     const data = this.load();
-    if (!data.wordData[word]) data.wordData[word] = { selected: false, correctFirst: 0, mistakes: 0, mastered: false };
-    data.wordData[word].mistakes++;
-    // un-master: needs to answer correctly first-try again
-    data.wordData[word].mastered = false;
+    const d = this._ensure(data, word);
+    d.mistakes++;
+    // Reset to Lv0 — start over
+    d.level = 0;
+    d.mastered = false;
+    d.lastReview = Date.now();
+    d.nextReview = Date.now() + REVIEW_INTERVALS[0]; // 5 min
     this.save(data);
+  },
+
+  // Decay: if a word is overdue by 2x its interval, drop its level
+  decayOverdue() {
+    const data = this.load();
+    const now = Date.now();
+    let changed = false;
+    for (const word in data.wordData) {
+      const d = data.wordData[word];
+      if (d.level === undefined) continue;
+      if (d.mastered || d.level === 0) continue;
+      if (!d.nextReview) continue;
+      const interval = REVIEW_INTERVALS[d.level - 1] || REVIEW_INTERVALS[REVIEW_INTERVALS.length - 1];
+      const overdueBy = now - d.nextReview;
+      if (overdueBy > interval) {
+        // Decay by 1 level for each full interval overdue
+        const levelsDown = Math.min(d.level, Math.floor(overdueBy / interval));
+        if (levelsDown > 0) {
+          d.level = Math.max(0, d.level - levelsDown);
+          d.mastered = false;
+          if (d.level === 0) {
+            d.nextReview = null;
+          } else {
+            d.nextReview = now; // due now
+          }
+          changed = true;
+        }
+      }
+    }
+    if (changed) this.save(data);
+  },
+
+  // Get words that are due for review (nextReview <= now)
+  getReviewDueWords() {
+    const data = this.load();
+    const now = Date.now();
+    return ALL_WORDS.filter(w => {
+      const d = data.wordData[w.word];
+      if (!d || d.mastered) return false;
+      if (d.level > 0 && d.nextReview && d.nextReview <= now) return true;
+      return false;
+    });
   },
 
   getSelectedWords() {
@@ -93,7 +207,7 @@ const DictUI = {
   searchTerm: "",
   renderedWords: [],    // flat list after filtering
   flatItems: [],        // [{type:'letter'|'divider'|'word', ...}]
-  ROW_H: 58,            // word row height in px
+  ROW_H: 68,            // word row height in px (increased for level info)
   HDR_H: 34,            // letter-group / divider height
   OVERSCAN: 8,          // extra rows above/below viewport
   _scrollRAF: null,
@@ -109,8 +223,12 @@ const DictUI = {
       filterChecked:   document.getElementById("filterChecked"),
       filterWrong:     document.getElementById("filterWrong"),
       filterMastered:  document.getElementById("filterMastered"),
+      filterReview:    document.getElementById("filterReview"),
       selectAllBtn:    document.getElementById("selectAllVisible"),
       deselectAllBtn:  document.getElementById("deselectAll"),
+      reviewBanner:    document.getElementById("reviewBanner"),
+      reviewCount:     document.getElementById("reviewBannerCount"),
+      reviewStartBtn:  document.getElementById("reviewStartBtn"),
     };
 
     // Create virtual scroll containers once
@@ -133,6 +251,7 @@ const DictUI = {
     this.els.filterChecked.addEventListener("click",  () => setFilter("checked"));
     this.els.filterWrong.addEventListener("click",    () => setFilter("wrong"));
     this.els.filterMastered.addEventListener("click", () => setFilter("mastered"));
+    this.els.filterReview.addEventListener("click",   () => setFilter("review"));
 
     // Select all visible
     this.els.selectAllBtn.addEventListener("click", () => {
@@ -145,6 +264,50 @@ const DictUI = {
     this.els.deselectAllBtn.addEventListener("click", () => {
       UserManager.batchSetSelected(ALL_WORDS.map(w => w.word), false);
       this.rebuild();
+    });
+
+    // Random pick
+    document.getElementById("randomPickBtn").addEventListener("click", () => {
+      const input = document.getElementById("randomCount");
+      let count = parseInt(input.value, 10);
+      if (isNaN(count) || count < 1) { count = 20; input.value = 20; }
+
+      // Deselect all first
+      UserManager.batchSetSelected(ALL_WORDS.map(w => w.word), false);
+
+      // Gather unmastered words, prefer those with mistakes (need review)
+      const userData = UserManager.getAllWordData();
+      const unmastered = ALL_WORDS.filter(w => !(userData[w.word]?.mastered));
+      const pool = unmastered.length >= count ? unmastered : ALL_WORDS.slice();
+
+      // Shuffle and pick
+      const shuffled = pool.slice();
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      const picked = shuffled.slice(0, Math.min(count, shuffled.length));
+      UserManager.batchSetSelected(picked.map(w => w.word), true);
+      this.rebuild();
+
+      // Brief visual feedback
+      const btn = document.getElementById("randomPickBtn");
+      btn.textContent = "✅ 已选 " + picked.length + " 词";
+      setTimeout(() => { btn.textContent = "🎲 随机选词"; }, 1200);
+    });
+
+    // Review banner: select all due words and start game
+    this.els.reviewStartBtn.addEventListener("click", () => {
+      const dueWords = UserManager.getReviewDueWords();
+      if (dueWords.length < 3) {
+        alert("待复习词少于3个，请稍后再来！");
+        return;
+      }
+      UserManager.batchSetSelected(ALL_WORDS.map(w => w.word), false);
+      UserManager.batchSetSelected(dueWords.map(w => w.word), true);
+      this.rebuild();
+      // Auto start game
+      document.getElementById("startGameBtn").click();
     });
 
     // Scroll → paint visible rows (throttled via rAF)
@@ -174,10 +337,11 @@ const DictUI = {
   },
 
   updateFilterBtns() {
-    [this.els.filterAll, this.els.filterChecked, this.els.filterWrong, this.els.filterMastered]
+    [this.els.filterAll, this.els.filterChecked, this.els.filterWrong, this.els.filterMastered, this.els.filterReview]
       .forEach(b => b.classList.remove("active"));
     ({ all: this.els.filterAll, checked: this.els.filterChecked,
-       wrong: this.els.filterWrong, mastered: this.els.filterMastered
+       wrong: this.els.filterWrong, mastered: this.els.filterMastered,
+       review: this.els.filterReview
     })[this.filter]?.classList.add("active");
   },
 
@@ -206,10 +370,15 @@ const DictUI = {
 
   getFilteredWords() {
     const userData = UserManager.getAllWordData();
+    const now = Date.now();
     let words = ALL_WORDS.map(w => {
       const d = userData[w.word] || {};
+      const level = d.level || 0;
+      const nextReview = d.nextReview || null;
+      const isDue = !d.mastered && level > 0 && nextReview && nextReview <= now;
       return { ...w, _selected: !!d.selected, _mastered: !!d.mastered,
-               _mistakes: d.mistakes || 0, _correctFirst: d.correctFirst || 0 };
+               _mistakes: d.mistakes || 0, _correctFirst: d.correctFirst || 0,
+               _level: level, _nextReview: nextReview, _isDue: isDue };
     });
     if (this.searchTerm) {
       words = words.filter(w =>
@@ -219,6 +388,7 @@ const DictUI = {
     if (this.filter === "checked")  words = words.filter(w => w._selected);
     if (this.filter === "wrong")    words = words.filter(w => w._mistakes > 0 && !w._mastered);
     if (this.filter === "mastered") words = words.filter(w => w._mastered);
+    if (this.filter === "review")   words = words.filter(w => w._isDue);
     return { active: words.filter(w => !w._mastered), mastered: words.filter(w => w._mastered) };
   },
 
@@ -256,14 +426,25 @@ const DictUI = {
 
   updateStats() {
     const userData = UserManager.getAllWordData();
-    let selectedCount = 0, masteredCount = 0;
+    const now = Date.now();
+    let selectedCount = 0, masteredCount = 0, reviewDueCount = 0;
     ALL_WORDS.forEach(w => {
       const d = userData[w.word];
       if (d?.selected) selectedCount++;
       if (d?.mastered) masteredCount++;
+      if (d && !d.mastered && d.level > 0 && d.nextReview && d.nextReview <= now) reviewDueCount++;
     });
     this.els.stats.textContent = `已选 ${selectedCount} 词 · 已掌握 ${masteredCount} 词 · 共 ${ALL_WORDS.length} 词`;
     this.els.startBtn.disabled = selectedCount < 3;
+
+    // Update review banner
+    if (reviewDueCount > 0) {
+      this.els.reviewBanner.style.display = "flex";
+      this.els.reviewCount.textContent = reviewDueCount;
+      this.els.reviewStartBtn.disabled = reviewDueCount < 3;
+    } else {
+      this.els.reviewBanner.style.display = "none";
+    }
   },
 
   // Paint only visible rows
@@ -316,12 +497,37 @@ const DictUI = {
   wordRowHTML(w, isMastered) {
     const checkedClass = w._selected ? " checked" : "";
     const masteredClass = isMastered ? " mastered-row" : "";
+    const dueClass = w._isDue ? " due-row" : "";
+
+    // Level badge
+    const lv = w._mastered ? 6 : (w._level || 0);
+    const lvText = levelLabel(lv);
+    const lvCol = levelColor(lv);
+
+    // Status / review info
     let statusHTML = "";
-    if (w._mastered) statusHTML = `<span class="word-status status-mastered">已掌握</span>`;
-    else if (w._mistakes > 0) statusHTML = `<span class="word-status status-wrong">错${w._mistakes}次</span>`;
-    return `<div class="word-row${checkedClass}${masteredClass}" data-word="${w.word}" style="height:${this.ROW_H}px;">
+    if (w._mastered) {
+      statusHTML = `<div class="word-meta"><span class="word-level" style="color:${lvCol}">${lvText}</span></div>`;
+    } else if (w._level > 0) {
+      const reviewText = formatNextReview(w._nextReview);
+      statusHTML = `<div class="word-meta"><span class="word-level" style="color:${lvCol}">${lvText}</span>
+        <span class="word-review-time">${reviewText}</span></div>`;
+    } else if (w._mistakes > 0) {
+      statusHTML = `<div class="word-meta"><span class="word-level" style="color:${lvCol}">${lvText}</span>
+        <span class="word-review-time">错${w._mistakes}次</span></div>`;
+    }
+
+    // Level progress bar
+    const pct = Math.min(100, (lv / 6) * 100);
+    const barHTML = lv > 0 ? `<div class="level-bar"><div class="level-bar-fill" style="width:${pct}%;background:${lvCol}"></div></div>` : "";
+
+    return `<div class="word-row${checkedClass}${masteredClass}${dueClass}" data-word="${w.word}" style="height:${this.ROW_H}px;">
       <div class="word-check">${w._selected ? "✓" : ""}</div>
-      <div class="word-info"><div class="word-en">${w.word}</div><div class="word-cn">${w.meaning}</div></div>
+      <div class="word-info">
+        <div class="word-en">${w.word}</div>
+        <div class="word-cn">${w.meaning}</div>
+        ${barHTML}
+      </div>
       ${statusHTML}</div>`;
   },
 
@@ -333,33 +539,39 @@ const DictUI = {
 //  SESSION TRACKER — tracks per-game-session results
 // ══════════════════════════════════════════════════════════
 const Session = {
-  results: [],        // { word, meaning, correct: boolean }
+  wordStats: {},    // { word: { meaning, wrongCount, correctCount, firstResult } }
+  order: [],        // order of first encounter
   active: false,
 
   start() {
-    this.results = [];
+    this.wordStats = {};
+    this.order = [];
     this.active = true;
   },
 
   record(word, meaning, correct) {
-    // Only record the first encounter of each word in a session
-    if (this.results.find(r => r.word === word)) return;
-    this.results.push({ word, meaning, correct });
-
+    if (!this.wordStats[word]) {
+      this.wordStats[word] = { meaning, wrongCount: 0, correctCount: 0, firstResult: correct ? 'correct' : 'wrong' };
+      this.order.push(word);
+    }
     if (correct) {
+      this.wordStats[word].correctCount++;
       UserManager.recordCorrectFirst(word);
     } else {
+      this.wordStats[word].wrongCount++;
       UserManager.recordMistake(word);
     }
   },
 
   getReport() {
-    const correctWords = this.results.filter(r => r.correct);
-    const wrongWords   = this.results.filter(r => !r.correct);
+    const allWords = this.order.map(w => ({ word: w, ...this.wordStats[w] }));
+    const firstTryCorrect = allWords.filter(w => w.firstResult === 'correct');
+    const wrongWords = allWords.filter(w => w.firstResult === 'wrong');
     return {
-      total:   this.results.length,
-      correct: correctWords,
-      wrong:   wrongWords
+      total: allWords.length,
+      correct: firstTryCorrect,
+      wrong: wrongWords,
+      allWords
     };
   }
 };
@@ -391,15 +603,54 @@ const Screens = {
 
     const correctList = document.getElementById("rCorrectList");
     const wrongList   = document.getElementById("rWrongList");
-    correctList.innerHTML = report.correct.map(r =>
-      `<span class="results-word-tag tag-correct">${r.word}</span>`
-    ).join("") || `<span style="color:var(--text-muted);font-size:13px;">无</span>`;
-    wrongList.innerHTML = report.wrong.map(r =>
-      `<span class="results-word-tag tag-wrong">${r.word}</span>`
-    ).join("") || `<span style="color:var(--text-muted);font-size:13px;">无</span>`;
+    const learnedList = document.getElementById("rLearnedList");
+    const userData = UserManager.getAllWordData();
+
+    correctList.innerHTML = report.correct.map(r => {
+      const d = userData[r.word] || {};
+      const lv = d.mastered ? 6 : (d.level || 0);
+      const nxt = d.mastered ? "已永久掌握" : formatNextReview(d.nextReview);
+      return `<div class="results-word-detail">
+        <span class="results-word-tag tag-correct">${r.word}</span>
+        <span class="results-level" style="color:${levelColor(lv)}">${levelLabel(lv)}</span>
+        <span class="results-next-review">${nxt}</span>
+      </div>`;
+    }).join("") || `<span style="color:var(--text-muted);font-size:13px;">无</span>`;
+
+    wrongList.innerHTML = report.wrong.map(r => {
+      const d = userData[r.word] || {};
+      const lv = d.mastered ? 6 : (d.level || 0);
+      const nxt = formatNextReview(d.nextReview);
+      return `<div class="results-word-detail">
+        <span class="results-word-tag tag-wrong">${r.word}</span>
+        <span class="wrong-detail">错${r.wrongCount}次 · 对${r.correctCount}次</span>
+        <span class="results-level" style="color:${levelColor(lv)}">${levelLabel(lv)}</span>
+        <span class="results-next-review">${nxt}</span>
+      </div>`;
+    }).join("") || `<span style="color:var(--text-muted);font-size:13px;">无</span>`;
+
+    learnedList.innerHTML = report.allWords.map(r => {
+      const d = userData[r.word] || {};
+      const lv = d.mastered ? 6 : (d.level || 0);
+      const nxt = d.mastered ? "已永久掌握" : formatNextReview(d.nextReview);
+      return `<div class="results-word-detail learned-item">
+        <span class="learned-word">${r.word}</span>
+        <span class="results-level" style="color:${levelColor(lv)}">${levelLabel(lv)}</span>
+        <span class="learned-meaning">${r.meaning}</span>
+        <span class="results-next-review">${nxt}</span>
+      </div>`;
+    }).join("") || `<span style="color:var(--text-muted);font-size:13px;">无</span>`;
 
     document.getElementById("rCorrectSection").style.display = report.correct.length ? "" : "none";
     document.getElementById("rWrongSection").style.display   = report.wrong.length ? "" : "none";
+
+    const summaryEl = document.getElementById("rSummaryText");
+    if (summaryEl) {
+      const allDone = GAME_WORDS.length > 0 && MASTERED.size >= GAME_WORDS.length;
+      summaryEl.textContent = allDone
+        ? `🎉 太棒了！全部 ${report.total} 个词已学完！`
+        : `本轮学习了 ${report.total} 个词`;
+    }
 
     this.show("resultsScreen");
   }
@@ -413,10 +664,14 @@ let GAME_WORDS = [];         // the words for this game session
 const MASTERED     = new Set();
 const CORRECT_CNT  = {};
 const REVENGE_POOL = [];
+const WRONG_WORDS  = new Set();  // words that were answered wrong at least once
+let lastPickedWord = null;       // prevent consecutive same word
 
 function initGamePool() {
   GAME_WORDS = UserManager.getSelectedWords();
   MASTERED.clear();
+  WRONG_WORDS.clear();
+  lastPickedWord = null;
   for (const k in CORRECT_CNT) delete CORRECT_CNT[k];
   REVENGE_POOL.length = 0;
 }
@@ -424,7 +679,9 @@ function initGamePool() {
 function markCorrect(wordObj) {
   const w = wordObj.word;
   CORRECT_CNT[w] = (CORRECT_CNT[w] || 0) + 1;
-  if (CORRECT_CNT[w] >= 2) {
+  // Wrong words need 3 correct answers; first-try correct words need 1
+  const threshold = WRONG_WORDS.has(w) ? 3 : 1;
+  if (CORRECT_CNT[w] >= threshold) {
     MASTERED.add(w);
     const idx = REVENGE_POOL.findIndex(r => r.word === w);
     if (idx >= 0) REVENGE_POOL.splice(idx, 1);
@@ -432,14 +689,15 @@ function markCorrect(wordObj) {
 }
 
 function addToRevenge(wordObj) {
+  WRONG_WORDS.add(wordObj.word);
   if (MASTERED.has(wordObj.word)) return;
   const ex = REVENGE_POOL.find(r => r.word === wordObj.word);
   if (ex) {
     ex.immediate = Math.max(ex.immediate, 2);
-    ex.totalLeft = Math.max(ex.totalLeft, 7);
+    ex.totalLeft = Math.max(ex.totalLeft, 10);
   } else {
     REVENGE_POOL.push({ word: wordObj.word, meaning: wordObj.meaning,
-      immediate: 2, questionsSince: 0, totalLeft: 7 });
+      immediate: 2, questionsSince: 0, totalLeft: 10 });
   }
 }
 
@@ -448,29 +706,61 @@ function tickRevenge() {
 }
 
 function pickCorrectWord() {
-  // Priority 1: immediate revenge
-  const imIdx = REVENGE_POOL.findIndex(r => r.immediate > 0);
+  const avoidWord = lastPickedWord;
+  const canAvoid = (w) => !avoidWord || w.word !== avoidWord;
+
+  // Priority 1: immediate revenge (but not same as last)
+  const imCandidates = REVENGE_POOL.filter(r => r.immediate > 0 && canAvoid(r));
+  let imIdx = imCandidates.length > 0
+    ? REVENGE_POOL.indexOf(imCandidates[0])
+    : -1;
+  // fallback: if only the same word is in immediate revenge, pick it anyway if no other option
+  if (imIdx < 0) {
+    imIdx = REVENGE_POOL.findIndex(r => r.immediate > 0);
+    // but only use it if there's truly nothing else
+    const pool = GAME_WORDS.filter(w => !MASTERED.has(w.word) && canAvoid(w));
+    if (pool.length > 0 && imIdx >= 0 && REVENGE_POOL[imIdx].word === avoidWord) imIdx = -1;
+  }
   if (imIdx >= 0) {
     const r = REVENGE_POOL[imIdx];
     r.immediate--; r.totalLeft--;
     if (r.totalLeft <= 0) REVENGE_POOL.splice(imIdx, 1);
+    lastPickedWord = r.word;
     return { word: r.word, meaning: r.meaning };
   }
-  // Priority 2: spaced revenge
-  const spIdx = REVENGE_POOL.findIndex(r => r.immediate === 0 && r.questionsSince >= 5);
+
+  // Priority 2: spaced revenge (not same as last)
+  const spCandidates = REVENGE_POOL.filter(r => r.immediate === 0 && r.questionsSince >= 5 && canAvoid(r));
+  let spIdx = spCandidates.length > 0
+    ? REVENGE_POOL.indexOf(spCandidates[0])
+    : -1;
   if (spIdx >= 0) {
     const r = REVENGE_POOL[spIdx];
     r.questionsSince = 0; r.totalLeft--;
     if (r.totalLeft <= 0) REVENGE_POOL.splice(spIdx, 1);
+    lastPickedWord = r.word;
     return { word: r.word, meaning: r.meaning };
   }
-  // Normal: from selected words, excluding mastered
-  const pool = GAME_WORDS.filter(w => !MASTERED.has(w.word));
-  if (pool.length > 0) return Phaser.Utils.Array.GetRandom(pool);
+
+  // Normal: from selected words, excluding mastered, avoiding last word
+  let pool = GAME_WORDS.filter(w => !MASTERED.has(w.word) && canAvoid(w));
+  if (pool.length === 0) pool = GAME_WORDS.filter(w => !MASTERED.has(w.word));
+  if (pool.length > 0) {
+    const pick = Phaser.Utils.Array.GetRandom(pool);
+    lastPickedWord = pick.word;
+    return pick;
+  }
   // All mastered — pick from all game words
-  return GAME_WORDS.length > 0
-    ? Phaser.Utils.Array.GetRandom(GAME_WORDS)
-    : Phaser.Utils.Array.GetRandom(ALL_WORDS);
+  const allPool = GAME_WORDS.filter(w => canAvoid(w));
+  const finalPool = allPool.length > 0 ? allPool : GAME_WORDS;
+  if (finalPool.length > 0) {
+    const pick = Phaser.Utils.Array.GetRandom(finalPool);
+    lastPickedWord = pick.word;
+    return pick;
+  }
+  const pick = Phaser.Utils.Array.GetRandom(ALL_WORDS);
+  lastPickedWord = pick.word;
+  return pick;
 }
 
 
@@ -507,6 +797,42 @@ function beep(scene, freq=880, dur=0.08, type="sine", vol=0.05) {
     o.connect(g); g.connect(ctx.destination);
     o.start(); o.stop(ctx.currentTime+dur);
   } catch(e) {}
+}
+
+// ── TTS: speak a word in British then American English ──
+function speakWord(word) {
+  if (!window.speechSynthesis) return;
+  try {
+    window.speechSynthesis.cancel();
+    const voices = window.speechSynthesis.getVoices();
+    const findVoice = (lang) => voices.find(v => v.lang === lang) ||
+                                voices.find(v => v.lang.startsWith(lang.split('-')[0]+'-'+lang.split('-')[1])) ||
+                                voices.find(v => v.lang.startsWith(lang.split('-')[0]));
+    // British first
+    const ukUtter = new SpeechSynthesisUtterance(word);
+    ukUtter.lang = 'en-GB';
+    ukUtter.rate = 0.85;
+    const ukVoice = findVoice('en-GB');
+    if (ukVoice) ukUtter.voice = ukVoice;
+
+    // American after British finishes
+    const usUtter = new SpeechSynthesisUtterance(word);
+    usUtter.lang = 'en-US';
+    usUtter.rate = 0.85;
+    const usVoice = findVoice('en-US');
+    if (usVoice) usUtter.voice = usVoice;
+
+    ukUtter.onend = () => {
+      setTimeout(() => window.speechSynthesis.speak(usUtter), 350);
+    };
+    window.speechSynthesis.speak(ukUtter);
+  } catch(e) { console.warn("TTS error:", e); }
+}
+
+// Preload voices (some browsers load them async)
+if (window.speechSynthesis) {
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
 }
 
 
@@ -622,6 +948,7 @@ class GameScene extends Phaser.Scene {
     // Stop game and show results
     this.stopTimer();
     this.roundFinished = true;
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
     if (gameInstance) {
       gameInstance.destroy(true);
       gameInstance = null;
@@ -897,8 +1224,8 @@ class GameScene extends Phaser.Scene {
   spawnPigs() {
     const bubCX = Math.round(W * 0.70);
     const pigX  = Math.round(W * 0.90);
-    const ys    = [175, 355, 515];
-    const bubW  = 290, bubH = 80;
+    const ys    = [168, 340, 512];
+    const bubW  = 290, bubH = 96;
     const colors= [0x3b82f6, 0xf59e0b, 0xa855f7];
     const moving= this.level >= 3;
 
@@ -920,8 +1247,11 @@ class GameScene extends Phaser.Scene {
       bubble.strokeRoundedRect(bx, by, bubW, bubH, 12);
 
       const label = this.add.text(bubCX + 6, y, c.text, {
-        fontSize:"18px", color:"#000000", fontStyle:"bold", align:"center",
-        wordWrap:{ width: bubW-32, useAdvancedWrap:true }
+        fontSize:"15px", color:"#1e293b", fontFamily:'-apple-system, "Microsoft YaHei", "PingFang SC", sans-serif',
+        fontStyle:"600", align:"center",
+        lineSpacing: 4,
+        wordWrap:{ width: bubW-36, useAdvancedWrap:true },
+        padding: { top: 2, bottom: 2 }
       }).setOrigin(0.5).setDepth(3);
 
       let moveTween = null;
@@ -1167,6 +1497,12 @@ class GameScene extends Phaser.Scene {
   }
 
   newRound() {
+    // ── Auto-end check: all words mastered in this session? ──
+    if (GAME_WORDS.length > 0 && MASTERED.size >= GAME_WORDS.length && REVENGE_POOL.length === 0) {
+      this.time.delayedCall(600, () => this.endSession());
+      return;
+    }
+
     this.roundId++;
     this.roundFinished=false; this.launched=false; this.dragging=false;
     this.skillUsed=false; this.studyPreviewing=false;
@@ -1196,12 +1532,16 @@ class GameScene extends Phaser.Scene {
     let ri="";
     if (imCount>0) ri="  ⚡立即复习:"+imCount+"词";
     else if (spCount>0) ri="  🔁待复习:"+spCount+"词";
-    this.levelText.setText("第"+this.level+"关  Q"+this.levelQ+"/5"+ri);
+    const remaining = GAME_WORDS.filter(w => !MASTERED.has(w.word)).length;
+    this.levelText.setText("第"+this.level+"关  Q"+this.levelQ+"/5  剩余:"+remaining+"词"+ri);
     this.tipText.setText("拖鸟→发射，击中正确答案的猪！  飞行中点击=技能");
-    this.masteredText.setText(MASTERED.size>0?"✅ 已掌握 "+MASTERED.size+" 词":"");
+    this.masteredText.setText(MASTERED.size>0?"✅ 已掌握 "+MASTERED.size+"/"+GAME_WORDS.length+" 词":"");
 
     this.spawnLevelBlocks();
     this.q=makeQuestion();
+
+    // ── TTS: speak the word in British then American English ──
+    speakWord(this.q.correct.word);
 
     if (this.studyMode){
       this.studyPreviewing=true;
