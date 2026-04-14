@@ -704,6 +704,16 @@ const DictUI = {
       const input = document.getElementById("randomCount");
       let count = parseInt(input.value, 10);
       if (isNaN(count) || count < 1) { count = 20; input.value = 20; }
+
+      // Dice roll animation
+      const diceCube = document.getElementById("diceCube");
+      if (diceCube) {
+        diceCube.classList.remove("rolling");
+        void diceCube.offsetWidth; // trigger reflow
+        diceCube.classList.add("rolling");
+        setTimeout(() => diceCube.classList.remove("rolling"), 800);
+      }
+
       UserManager.batchSetSelected(ALL_WORDS.map(w => w.word), false);
       const userData = UserManager.getAllWordData();
       const unmastered = ALL_WORDS.filter(w => !(userData[w.word]?.mastered));
@@ -717,8 +727,11 @@ const DictUI = {
       UserManager.batchSetSelected(picked.map(w => w.word), true);
       this.rebuild();
       const btn = document.getElementById("randomPickBtn");
-      btn.textContent = "✅ " + picked.length + " 词";
-      setTimeout(() => { btn.textContent = "🎲 随机"; }, 1200);
+      const label = btn.querySelector(".dice-label");
+      if (label) {
+        label.textContent = "✅ 已选 " + picked.length + " 词";
+        setTimeout(() => { label.textContent = "随机选词"; }, 1500);
+      }
     });
 
     this.els.reviewStartBtn.addEventListener("click", () => {
@@ -1437,28 +1450,33 @@ class GameScene extends Phaser.Scene {
   }
 
   spawnPigs() {
-    const bubCX=Math.round(W*0.70); const pigX=Math.round(W*0.90);
-    const ys=[168,340,512]; const bubW=290,bubH=96;
+    const pigX=Math.round(W*0.54); const bubCX=Math.round(W*0.82);
+    const ys=[168,340,512]; const bubW=260,bubH=88;
     const colors=[0x3b82f6,0xf59e0b,0xa855f7]; const moving=this.level>=3;
     this.q.choices.forEach((c,i)=>{
       const y=ys[i];
       const pig=this.makePig(pigX,y);
+      pig.setDepth(4);
       this.tweens.add({targets:pig,scaleY:0.9,duration:500+i*80,yoyo:true,repeat:-1,ease:"Sine.easeInOut"});
+      // Text bubble to the RIGHT of the pig
       const bx=bubCX-bubW/2,by=y-bubH/2;
       const bubble=this.add.graphics().setDepth(2);
-      bubble.fillStyle(0xffffff,0.98);
+      bubble.fillStyle(0xffffff,0.92);
       bubble.fillRoundedRect(bx,by,bubW,bubH,12);
       bubble.fillStyle(colors[i],1);
-      bubble.fillRoundedRect(bx,by,8,bubH,{tl:12,bl:12,tr:0,br:0});
-      bubble.lineStyle(2,0xc0c8d4,1);
+      bubble.fillRoundedRect(bx+bubW-8,by,8,bubH,{tl:0,bl:0,tr:12,br:12});
+      bubble.lineStyle(2,0xc0c8d4,0.6);
       bubble.strokeRoundedRect(bx,by,bubW,bubH,12);
-      const label=this.add.text(bubCX+6,y,c.text,{
-        fontSize:"15px",color:"#1e293b",fontFamily:'-apple-system,"Microsoft YaHei","PingFang SC",sans-serif',
-        fontStyle:"600",align:"center",lineSpacing:4,wordWrap:{width:bubW-36,useAdvancedWrap:true},padding:{top:2,bottom:2}
+      // Small triangle pointer from bubble toward pig
+      bubble.fillStyle(0xffffff,0.92);
+      bubble.fillTriangle(bx,y-8, bx,y+8, bx-14,y);
+      const label=this.add.text(bubCX-4,y,c.text,{
+        fontSize:"14px",color:"#1e293b",fontFamily:'-apple-system,"Microsoft YaHei","PingFang SC",sans-serif',
+        fontStyle:"600",align:"center",lineSpacing:4,wordWrap:{width:bubW-30,useAdvancedWrap:true},padding:{top:2,bottom:2}
       }).setOrigin(0.5).setDepth(3);
       let moveTween=null;
       if(moving){
-        const range=38+i*12;
+        const range=30+i*10;
         moveTween=this.tweens.add({targets:pig,x:"+="+range,duration:950+i*260,yoyo:true,repeat:-1,ease:"Sine.easeInOut"});
       }
       this.pigMeta.push({pig,label,bubble,ok:c.ok,alive:true,moveTween});

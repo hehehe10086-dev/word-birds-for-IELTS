@@ -510,7 +510,7 @@
     .btn-start:hover { background: #16a34a; }
     .btn-start:disabled { opacity: 0.4; cursor: not-allowed; }
 
-    .random-pick-group { display: flex; gap: 4px; align-items: center; }
+    .random-pick-group { display: flex; gap: 6px; align-items: center; }
     .random-input {
       width: 54px; padding: 6px 4px; text-align: center;
       background: var(--bg-deep); border: 1px solid var(--border);
@@ -520,15 +520,88 @@
     .random-input::-webkit-inner-spin-button,
     .random-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     .random-input:focus { border-color: var(--accent); }
-    .btn-random {
-      padding: 6px 12px;
-      background: linear-gradient(135deg, #7c3aed, #6d28d9);
-      border: none; border-radius: 6px;
-      color: #fff; font-size: 12px; font-weight: 600;
-      cursor: pointer; white-space: nowrap; transition: all 0.15s;
+
+    /* ── Animated 3D Dice Button ──────────────────── */
+    .btn-dice {
+      position: relative;
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 16px 8px 10px;
+      background: linear-gradient(135deg, #7c3aed, #4f46e5);
+      border: 2px solid rgba(139,92,246,0.5);
+      border-radius: 10px;
+      color: #fff; font-size: 13px; font-weight: 700;
+      cursor: pointer; white-space: nowrap;
+      transition: all 0.2s;
       font-family: var(--font-cn);
+      overflow: hidden;
     }
-    .btn-random:hover { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+    .btn-dice::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.15), transparent 60%);
+      border-radius: 8px;
+      pointer-events: none;
+    }
+    .btn-dice:hover {
+      transform: translateY(-2px) scale(1.04);
+      box-shadow: 0 6px 24px rgba(124,58,237,0.5);
+      border-color: rgba(167,139,250,0.8);
+    }
+    .btn-dice:active { transform: scale(0.95); }
+
+    .dice-wrap {
+      width: 28px; height: 28px;
+      perspective: 120px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .dice-cube {
+      width: 22px; height: 22px;
+      position: relative;
+      transform-style: preserve-3d;
+      animation: diceFloat 3s ease-in-out infinite;
+    }
+    .btn-dice:hover .dice-cube {
+      animation: diceSpin 0.6s ease-in-out;
+    }
+    .dice-face {
+      position: absolute; width: 22px; height: 22px;
+      background: #fff;
+      border-radius: 3px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; line-height: 1;
+      border: 1px solid rgba(0,0,0,0.08);
+      box-shadow: inset 0 0 3px rgba(0,0,0,0.05);
+    }
+    .dice-face.f-front  { transform: translateZ(11px); }
+    .dice-face.f-back   { transform: rotateY(180deg) translateZ(11px); }
+    .dice-face.f-right  { transform: rotateY(90deg) translateZ(11px); }
+    .dice-face.f-left   { transform: rotateY(-90deg) translateZ(11px); }
+    .dice-face.f-top    { transform: rotateX(90deg) translateZ(11px); }
+    .dice-face.f-bottom { transform: rotateX(-90deg) translateZ(11px); }
+    .dice-dot {
+      width: 4px; height: 4px; border-radius: 50%;
+      background: #6d28d9; position: absolute;
+    }
+
+    @keyframes diceFloat {
+      0%, 100% { transform: rotateX(15deg) rotateY(15deg); }
+      25% { transform: rotateX(20deg) rotateY(25deg); }
+      50% { transform: rotateX(10deg) rotateY(35deg); }
+      75% { transform: rotateX(18deg) rotateY(20deg); }
+    }
+    @keyframes diceSpin {
+      0% { transform: rotateX(15deg) rotateY(15deg); }
+      50% { transform: rotateX(200deg) rotateY(380deg); }
+      100% { transform: rotateX(15deg) rotateY(375deg); }
+    }
+    @keyframes diceRoll {
+      0% { transform: rotateX(0) rotateY(0) rotateZ(0); }
+      100% { transform: rotateX(720deg) rotateY(540deg) rotateZ(360deg); }
+    }
+    .dice-cube.rolling {
+      animation: diceRoll 0.8s cubic-bezier(0.2, 0.8, 0.3, 1) !important;
+    }
+    .btn-dice .dice-label { position: relative; z-index: 1; }
 
     /* Review banner */
     .review-banner {
@@ -860,7 +933,46 @@
         <button class="btn-sm" id="deselectAll">清空选择</button>
         <span class="random-pick-group">
           <input type="number" id="randomCount" class="random-input" min="3" max="999" value="20" placeholder="数量">
-          <button class="btn-random" id="randomPickBtn">🎲 随机</button>
+          <button class="btn-dice" id="randomPickBtn">
+            <div class="dice-wrap">
+              <div class="dice-cube" id="diceCube">
+                <div class="dice-face f-front">
+                  <span class="dice-dot" style="top:9px;left:9px;"></span>
+                </div>
+                <div class="dice-face f-back">
+                  <span class="dice-dot" style="top:4px;left:4px;"></span>
+                  <span class="dice-dot" style="top:4px;right:4px;"></span>
+                  <span class="dice-dot" style="bottom:4px;left:4px;"></span>
+                  <span class="dice-dot" style="bottom:4px;right:4px;"></span>
+                  <span class="dice-dot" style="top:9px;left:9px;"></span>
+                  <span class="dice-dot" style="top:14px;left:14px;"></span>
+                </div>
+                <div class="dice-face f-right">
+                  <span class="dice-dot" style="top:4px;right:4px;"></span>
+                  <span class="dice-dot" style="top:9px;left:9px;"></span>
+                  <span class="dice-dot" style="bottom:4px;left:4px;"></span>
+                </div>
+                <div class="dice-face f-left">
+                  <span class="dice-dot" style="top:4px;left:4px;"></span>
+                  <span class="dice-dot" style="bottom:4px;right:4px;"></span>
+                </div>
+                <div class="dice-face f-top">
+                  <span class="dice-dot" style="top:4px;left:4px;"></span>
+                  <span class="dice-dot" style="top:4px;right:4px;"></span>
+                  <span class="dice-dot" style="bottom:4px;left:4px;"></span>
+                  <span class="dice-dot" style="bottom:4px;right:4px;"></span>
+                </div>
+                <div class="dice-face f-bottom">
+                  <span class="dice-dot" style="top:4px;left:4px;"></span>
+                  <span class="dice-dot" style="top:4px;right:4px;"></span>
+                  <span class="dice-dot" style="top:9px;left:9px;"></span>
+                  <span class="dice-dot" style="bottom:4px;left:4px;"></span>
+                  <span class="dice-dot" style="bottom:4px;right:4px;"></span>
+                </div>
+              </div>
+            </div>
+            <span class="dice-label">随机选词</span>
+          </button>
         </span>
         <button class="btn-start" id="startGameBtn" disabled>开始游戏</button>
       </div>
